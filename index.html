@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>见面倒计时</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+
+  :root{
+    --card-w: clamp(29px, 9.4vw, 80px);
+    --card-h: calc(var(--card-w) * 1.4);
+    --card-r: calc(var(--card-w) * 0.26);
+    --digit-gap: calc(var(--card-w) * 0.085);
+    --num-size: calc(var(--card-w) * 0.84);
+    --group-gap: clamp(10px, 3.6vw, 40px);
+    /* 贯穿整张卡片的渐变，上下两半各取一半，拼起来才是一整块材质 */
+    --face-grad: linear-gradient(180deg,
+        rgba(255,255,255,.175) 0%,
+        rgba(255,255,255,.075) 26%,
+        rgba(255,255,255,.028) 47%,
+        rgba(255,255,255,.016) 50%,
+        rgba(255,255,255,.038) 56%,
+        rgba(255,255,255,.10) 82%,
+        rgba(255,255,255,.155) 100%);
+  }
+
+  html { height: 100%; }
+
+  body{
+    margin: 0;
+    min-height: 100%;
+    background: #000;
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow-x: hidden;
+    overscroll-behavior: none;
+    touch-action: manipulation;
+    -webkit-text-size-adjust: 100%;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* ---------- 背景：两团缓慢游走的光 + 胶片颗粒 ---------- */
+  .aura{
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+  }
+  .aura::before,
+  .aura::after{
+    content: "";
+    position: absolute;
+    width: 78vw;
+    height: 78vw;
+    border-radius: 50%;
+    will-change: transform;
+  }
+  .aura::before{
+    top: -46vw;
+    left: 50%;
+    margin-left: -39vw;
+    background: radial-gradient(closest-side, rgba(118,132,255,.20), rgba(118,132,255,.06) 46%, transparent 72%);
+    animation: drift1 26s ease-in-out infinite alternate;
+  }
+  .aura::after{
+    right: -34vw;
+    bottom: -44vw;
+    background: radial-gradient(closest-side, rgba(255,104,158,.15), rgba(255,104,158,.04) 48%, transparent 72%);
+    animation: drift2 34s ease-in-out infinite alternate;
+  }
+
+  .grain{
+    position: fixed;
+    inset: 0;
+    z-index: 3;
+    pointer-events: none;
+    opacity: .022;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.15' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+  }
+
+  .stage{
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 1120px;
+    min-height: 100vh;
+    min-height: 100dvh;
+    /* 顶部/底部预留灵动岛与 Home 指示条安全区 */
+    padding: calc(env(safe-area-inset-top, 0px) + clamp(18px, 5vh, 56px))
+             calc(env(safe-area-inset-right, 0px) + clamp(12px, 4vw, 24px))
+             calc(env(safe-area-inset-bottom, 0px) + clamp(18px, 5vh, 56px))
+             calc(env(safe-area-inset-left, 0px) + clamp(12px, 4vw, 24px));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+
+  /* ---------- 标题 ---------- */
+  .title{
+    margin: 0;
+    font-size: clamp(22px, 6vw, 46px);
+    font-weight: 700;
+    letter-spacing: .2em;
+    text-indent: .2em;
+    line-height: 1.2;
+    color: #fff;
+    text-shadow:
+      0 0 24px rgba(160,176,255,.42),
+      0 0 70px rgba(120,96,255,.28);
+    animation: riseIn .9s .05s cubic-bezier(.2,.8,.3,1) both;
+  }
+  .title .br{
+    opacity: .32;
+    font-weight: 300;
+    margin: 0 .02em;
+  }
+  .meta{
+    margin: clamp(15px, 2.6vh, 24px) 0 clamp(30px, 5.8vh, 60px);
+    font-size: clamp(10px, 2.4vw, 12px);
+    font-weight: 500;
+    color: rgba(255,255,255,.34);
+    letter-spacing: .32em;
+    text-indent: .32em;
+    font-variant-numeric: tabular-nums;
+    animation: riseIn .9s .14s cubic-bezier(.2,.8,.3,1) both;
+  }
+
+  /* ---------- 计时器 ---------- */
+  .timer{
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    flex-wrap: nowrap;
+    gap: var(--group-gap);
+    transition: opacity 1s ease, transform 1s ease;
+  }
+  .timer.is-done{ opacity: .3; transform: scale(.955); }
+
+  .unit{
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: clamp(10px, 2.4vh, 18px);
+  }
+  /* 组与组之间的冒号 */
+  .unit + .unit::before{
+    content: "";
+    position: absolute;
+    left: calc(var(--group-gap) / -2 - 2px);
+    top: calc(var(--card-h) / 2 - 2px - var(--card-w) * .07);
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: rgba(255,255,255,.3);
+    box-shadow:
+      0 calc(var(--card-w) * .14) 0 rgba(255,255,255,.3),
+      0 0 10px rgba(150,168,255,.55);
+  }
+
+  .cards{
+    display: flex;
+    gap: var(--digit-gap);
+  }
+
+  .label{
+    font-size: clamp(10px, 2.6vw, 13px);
+    font-weight: 500;
+    color: rgba(255,255,255,.46);
+    letter-spacing: .32em;
+    text-indent: .32em;
+    white-space: nowrap;
+    animation: riseIn .9s cubic-bezier(.2,.8,.3,1) both;
+  }
+  .unit:nth-child(1) .label{ animation-delay: .30s; }
+  .unit:nth-child(2) .label{ animation-delay: .38s; }
+  .unit:nth-child(3) .label{ animation-delay: .46s; }
+  .unit:nth-child(4) .label{ animation-delay: .54s; }
+
+  /* ---------- 单个数字卡 ---------- */
+  .digit{
+    position: relative;
+    width: var(--card-w);
+    height: var(--card-h);
+    perspective: calc(var(--card-w) * 6.5);
+    border-radius: var(--card-r);
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,.055),
+      0 18px 34px -12px rgba(0,0,0,.9),
+      0 4px 10px -2px rgba(0,0,0,.7);
+    animation: riseIn .9s cubic-bezier(.2,.8,.3,1) both;
+  }
+
+  .face{
+    position: absolute;
+    left: 0;
+    width: 100%;
+    height: 50%;
+    overflow: hidden;
+    background-color: rgba(255,255,255,.042);
+    background-image: var(--face-grad);
+    background-size: 100% var(--card-h);
+    background-repeat: no-repeat;
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+  }
+  .face.top{
+    top: 0;
+    border-radius: var(--card-r) var(--card-r) 0 0;
+    background-position: center top;
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.17),
+      inset 0 -1px 0 rgba(0,0,0,.92);
+  }
+  .face.bottom{
+    bottom: 0;
+    border-radius: 0 0 var(--card-r) var(--card-r);
+    background-position: center bottom;
+    box-shadow:
+      inset 0 2px 3px -1px rgba(0,0,0,.6),
+      inset 0 -1px 0 rgba(255,255,255,.1);
+  }
+
+  .face span{
+    position: absolute;
+    left: 0;
+    width: 100%;
+    height: var(--card-h);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--num-size);
+    font-weight: 600;
+    line-height: 1;
+    color: #fff;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+    text-shadow: 0 1px 12px rgba(0,0,0,.65);
+  }
+  .face.top span{ top: 0; }
+  .face.bottom span{ top: calc(var(--card-h) / -2); }
+
+  .s-top{ z-index: 1; }
+  .s-bottom{ z-index: 1; }
+
+  /* 翻页叶片 */
+  .f-top{
+    z-index: 4;
+    transform-origin: bottom center;
+    transform: rotateX(0deg);
+    opacity: 0;
+    background-color: #0c0d12;
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.16),
+      inset 0 -1px 0 rgba(0,0,0,.92);
+    will-change: transform;
+  }
+  .f-bottom{
+    z-index: 3;
+    transform-origin: top center;
+    transform: rotateX(90deg);
+    opacity: 0;
+    background-color: #0c0d12;
+    box-shadow:
+      inset 0 2px 3px -1px rgba(0,0,0,.6),
+      inset 0 -1px 0 rgba(255,255,255,.1);
+    will-change: transform;
+  }
+
+  /* ---------- 结束提示 ---------- */
+  .done{
+    margin: 0;
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    transform: translateY(16px) scale(.95);
+    transition: opacity 1s ease, max-height 1s ease, margin-top 1s ease, transform 1s cubic-bezier(.2,.9,.3,1.25);
+  }
+  .done.show{
+    max-height: 160px;
+    opacity: 1;
+    margin-top: clamp(24px, 4.6vh, 42px);
+    transform: none;
+  }
+  .done span{
+    display: inline-block;
+    font-size: clamp(17px, 5.2vw, 27px);
+    font-weight: 700;
+    letter-spacing: .04em;
+    line-height: 1.7;
+    color: #fff;
+    text-shadow:
+      0 0 12px rgba(255,164,204,.55),
+      0 0 26px rgba(255,132,180,.22);
+  }
+  .br-mb{ display: none; }
+  @media (max-width: 500px){
+    .br-mb{ display: inline; }
+  }
+
+  /* ---------- 底部小字 ---------- */
+  .hint{
+    margin: clamp(28px, 5.6vh, 70px) 0 0;
+    font-size: clamp(11px, 3.1vw, 13px);
+    color: rgba(255,255,255,.34);
+    letter-spacing: .3em;
+    text-indent: .3em;
+    transition: opacity 1s ease;
+    animation: hintPulse 2.8s ease-in-out infinite;
+  }
+  /* animation 的 opacity 会盖掉普通声明，必须同时停掉动画，否则结束后小字不会消失 */
+  .hint.hide{ animation: none; opacity: 0; }
+
+  @keyframes riseIn{
+    from{ opacity: 0; transform: translateY(18px); }
+    to{ opacity: 1; transform: none; }
+  }
+  @keyframes hintPulse{
+    0%, 100%{ opacity: .32; }
+    50%{ opacity: .58; }
+  }
+  @keyframes drift1{
+    from{ transform: translate3d(-3%, 0, 0) scale(1); }
+    to{ transform: translate3d(6%, 4%, 0) scale(1.12); }
+  }
+  @keyframes drift2{
+    from{ transform: translate3d(2%, 2%, 0) scale(1.06); }
+    to{ transform: translate3d(-6%, -4%, 0) scale(1); }
+  }
+
+  /* 小屏收紧 */
+  @media (max-width: 420px){
+    .unit + .unit::before{ display: none; }
+    .title{ letter-spacing: .16em; text-indent: .16em; }
+  }
+  @media (max-height: 540px){
+    .meta{ margin: 10px 0 20px; }
+    .hint{ margin-top: 22px; }
+    :root{ --card-w: clamp(26px, 7vw, 56px); }
+  }
+</style>
+</head>
+<body>
+  <div class="aura"></div>
+
+  <main class="stage">
+    <h1 class="title"><span class="br">【</span>见面倒计时<span class="br">】</span></h1>
+    <p class="meta">2026.11.03&nbsp;&nbsp;17:20</p>
+
+    <div class="timer" id="timer">
+      <div class="unit" data-unit="days">
+        <div class="cards"></div>
+        <div class="label">天</div>
+      </div>
+      <div class="unit" data-unit="hours">
+        <div class="cards"></div>
+        <div class="label">时</div>
+      </div>
+      <div class="unit" data-unit="minutes">
+        <div class="cards"></div>
+        <div class="label">分</div>
+      </div>
+      <div class="unit" data-unit="seconds">
+        <div class="cards"></div>
+        <div class="label">秒</div>
+      </div>
+    </div>
+
+    <p class="done" id="done"><span>马上就到喽，再等一下下嘛，<br class="br-mb">薇薇宝宝</span></p>
+
+    <p class="hint" id="hint">时间加速中.....</p>
+  </main>
+
+  <div class="grain"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* 目标时间：2026 年 11 月 3 日 17:20（本地时间） */
+  var TARGET = new Date(2026, 10, 3, 17, 20, 0, 0).getTime();
+
+  var DUR  = 460;          // 一次完整翻牌时长(ms)
+  var HALF = DUR / 2;      // 上下两段的各自时长
+  var EASE = 'cubic-bezier(.44,.05,.28,.99)';
+
+  var UNITS = ['days', 'hours', 'minutes', 'seconds'];
+  var store = {};
+  var first = true;
+  var done  = false;
+  var seq   = 0;           // 入场动画的逐个延迟序号
+
+  /* ---------- 1. 构建 DOM ---------- */
+  function buildDigits() {
+    UNITS.forEach(function (key) {
+      var box = document.querySelector('.unit[data-unit="' + key + '"] .cards');
+      var list = [];
+      for (var i = 0; i < 2; i++) {
+        var el = document.createElement('div');
+        el.className = 'digit';
+        el.style.animationDelay = (120 + seq * 45) + 'ms';
+        el.innerHTML =
+          '<div class="face top s-top"><span>0</span></div>' +
+          '<div class="face bottom s-bottom"><span>0</span></div>' +
+          '<div class="face top f-top"><span>0</span></div>' +
+          '<div class="face bottom f-bottom"><span>0</span></div>';
+        el.dataset.v = '0';
+        el._timer = null;
+        box.appendChild(el);
+        list.push(el);
+        seq++;
+      }
+      store[key] = list;
+    });
+  }
+
+  /* ---------- 2. 单个数字翻牌 ---------- */
+  function setDigit(d, ch, animate) {
+    if (d.dataset.v === ch) return;
+
+    var old = d.dataset.v;
+    d.dataset.v = ch;
+
+    var sTop  = d.querySelector('.s-top  span');
+    var sBot  = d.querySelector('.s-bottom span');
+    var fTop  = d.querySelector('.f-top');
+    var fBot  = d.querySelector('.f-bottom');
+    var fTopS = fTop.firstElementChild;
+    var fBotS = fBot.firstElementChild;
+
+    /* 上半静态 = 新数字；下半静态 = 旧数字 */
+    sTop.textContent = ch;
+    sBot.textContent = old;
+    /* 翻页叶片：上叶带旧数字往下翻，下叶带新数字翻上来 */
+    fTopS.textContent = old;
+    fBotS.textContent = ch;
+
+    if (!animate) { sBot.textContent = ch; return; }
+
+    clearTimeout(d._timer);
+
+    /* 复位（无过渡） */
+    fTop.style.transition = 'none';
+    fBot.style.transition = 'none';
+    fTop.style.transform  = 'rotateX(0deg)';
+    fBot.style.transform  = 'rotateX(90deg)';
+    fTop.style.opacity    = '1';
+    fBot.style.opacity    = '1';
+    void fTop.offsetHeight;   // 强制回流，确保复位生效
+
+    /* 开始翻：上半先翻下去，下半再翻上来 */
+    fTop.style.transition = 'transform ' + HALF + 'ms ' + EASE;
+    fBot.style.transition = 'transform ' + HALF + 'ms ' + EASE + ' ' + HALF + 'ms';
+    fTop.style.transform  = 'rotateX(-90deg)';
+    fBot.style.transform  = 'rotateX(0deg)';
+
+    d._timer = setTimeout(function () {
+      sBot.textContent  = ch;
+      fTop.style.opacity = '0';
+      fBot.style.opacity = '0';
+    }, DUR + 20);
+  }
+
+  /* ---------- 3. 渲染 ---------- */
+  function paint(key, value) {
+    var s = String(value);
+    if (s.length > 2) s = '99';
+    while (s.length < 2) s = '0' + s;
+    setDigit(store[key][0], s.charAt(0), !first);
+    setDigit(store[key][1], s.charAt(1), !first);
+  }
+
+  function render(now) {
+    var diff = TARGET - now;
+    if (diff < 0) diff = 0;
+
+    var t = Math.floor(diff / 1000);
+    paint('days',    Math.floor(t / 86400));
+    paint('hours',   Math.floor((t % 86400) / 3600));
+    paint('minutes', Math.floor((t % 3600) / 60));
+    paint('seconds', t % 60);
+  }
+
+  /* ---------- 4. 结束 ---------- */
+  function finish() {
+    if (done) return;
+    done = true;
+    document.getElementById('timer').classList.add('is-done');
+    document.getElementById('hint').classList.add('hide');
+    document.getElementById('done').classList.add('show');
+    document.title = '马上就到喽，再等一下下嘛，薇薇宝宝';
+  }
+
+  /* ---------- 5. 主循环 ---------- */
+  function loop() {
+    if (done) return;
+    var now = Date.now();
+    render(now);
+    first = false;
+    if (now >= TARGET) { finish(); return; }
+    requestAnimationFrame(loop);
+  }
+
+  /* ---------- 启动 ---------- */
+  buildDigits();
+  render(Date.now());          // 首帧直接定位，不触发动画
+  first = false;
+
+  if (Date.now() >= TARGET) {
+    finish();
+  } else {
+    requestAnimationFrame(loop);
+  }
+})();
+</script>
+</body>
+</html>
